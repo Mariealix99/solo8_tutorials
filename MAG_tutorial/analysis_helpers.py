@@ -8,18 +8,18 @@ def cdf2df(path):
     with cdflib.cdfread.CDF(path) as file:
 
         # Extract epoch times
-        epoch = file.varget(variable='EPOCH', expand=False, to_np=True)
+        epoch = file.varget(variable='EPOCH')
 
         # Extract epoch times
         CDF_epoch_class = cdflib.epochs.CDFepoch()
-        time = CDF_epoch_class.to_datetime(epoch, to_np=True)
+        time = CDF_epoch_class.to_datetime(epoch)
 
         # Extract B vectors times
-        B = file.varget(variable='B_RTN', expand=False)
+        B = file.varget(variable='B_RTN')
         norm = np.linalg.norm(B, axis=1)
 
         # Get data attributes
-        attributes = file.globalattsget(expand=True)
+        attributes = file.globalattsget()
         
         df = pd.DataFrame({'BR': B.T[0],
                         'BT': B.T[1],

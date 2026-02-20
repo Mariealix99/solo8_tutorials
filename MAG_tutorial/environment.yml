@@ -1,0 +1,29 @@
+name: solo8-mag
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - ffmpeg
+  - numpy<2
+  - matplotlib
+  - scipy
+  - jupyter
+  - jupyterlab
+  - astropy
+  - sunpy[all]
+  - pip:
+    - torch>=2.4
+    - torchaudio>=2.4
+    - sunpy-soar
+    - astrospice
+    - git+https://github.com/james-trayford/strauss.git@animation
+    - ffmpeg-python
+    - IPython<9
+    - ipywidgets
+    - wavio
+    - reproject
+    - sunraster
+    - astroquery
