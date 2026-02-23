@@ -3,11 +3,19 @@ from ipywidgets import (
     Label, Layout, Box, VBox, HBox, GridBox, Button,
     IntSlider, FloatSlider, FloatLogSlider, ToggleButton,
     Accordion, Text, FloatText, IntText, BoundedFloatText,
-    ToggleButtons, Checkbox, DatePicker, Output, HTML
+    ToggleButtons, Checkbox, Output, HTML
 )
 from IPython.display import clear_output, display
+from datetime import date
+import pandas as pd
 from sonifier import Sonifier
-from data import DataManager
+from data import DataManager, fetch_soar_data
+
+
+import sys
+if 'analysis_helpers' in sys.modules:
+    del sys.modules['analysis_helpers']
+import analysis_helpers as helpers
 
 
 # ============================================================================
@@ -34,6 +42,8 @@ class SonificationUI:
     Interactive UI for designing and generating sonifications of MAG data.
     
     This class provides a flexible, responsive interface for users to:
+    - Select date range to fetch from SOAR
+    - Automatically fetch and organize data by month
     - Select which month to sonify
     - Choose which data variables to sonify
     - Map data to evolvable sound properties
@@ -42,29 +52,25 @@ class SonificationUI:
     
     Attributes:
     -----------
-    monthly_data : dict
-        Dictionary where keys are month numbers (1-12) and values are DataFrames
-    month_names : list
-        List of 12 month names
+    analysis_helpers : module
+        Helper module for CDF file processing
     data_labels : list
         Available magnetic field components: |B|, BR, BT, BN
     evolvable_properties : list
         Sound properties that can be mapped to data: pitch_shift, cutoff, volume, etc.
     """
 
-    def __init__(self, monthly_data, month_names):
+
+    def __init__(self):
         """
         Initialize the SonificationUI.
         
         Parameters:
         -----------
-        monthly_data : dict
-            Dictionary with month numbers (1-12) as keys, DataFrames as values
-        month_names : list
-            List of 12 month name strings
+        analysis_helpers : module
+            Helper module with cdf2df function
         """
-        self.monthly_data = monthly_data
-        self.month_names = month_names
+        self.analysis_helpers = helpers
         self.data_labels = ['|B|', 'BR', 'BT', 'BN']
         self.evolvable_properties = [
             "pitch_shift", "cutoff", "volume", "phi",
@@ -74,6 +80,7 @@ class SonificationUI:
 
         self._create_widgets()
         self._setup_callbacks()
+
 
     def _create_widgets(self):
         """Create all UI components organized into cards."""
@@ -102,6 +109,7 @@ class SonificationUI:
             border='0'
         ))
 
+
     def _create_card(self, title, children, tag):
         """
         Helper method to create a styled card widget.
@@ -129,32 +137,37 @@ class SonificationUI:
         card.tag = tag
         return card
 
+
     def _create_date_card(self):
-        """Create month selection card with a slider."""
-        # Month slider (1-12)
-        self.month_slider = IntSlider(
-            value=1,
-            min=1,
-            max=12,
-            step=1,
-            description='Month:',
+        """Create date range selection card."""
+        # Start date text input (default: 2020-04-01)
+        self.start_date_input = Text(
+            value='2020-04-01',
+            placeholder='YYYY-MM-DD',
+            description='Start Date:',
             layout=Layout(width='100%')
         )
-        self.month_slider.tag = 'month_slider'
+        self.start_date_input.tag = 'start_date_input'
         
-        # Month display label
-        self.month_display = Label(
-            value=f'Selected: {self.month_names[0]}',
-            style=MUTED_LABEL_STYLE
+        # End date text input (default: 2020-04-30)
+        self.end_date_input = Text(
+            value='2020-04-30',
+            placeholder='YYYY-MM-DD',
+            description='End Date:',
+            layout=Layout(width='100%')
         )
-        self.month_display.tag = 'month_display'
+        self.end_date_input.tag = 'end_date_input'
         
         # Combine into card
         self.date_card = self._create_card(
-            'Select Month to Sonify',
-            [self.month_slider, self.month_display],
+            'Date Range Selection',
+            [
+                self.start_date_input,
+                self.end_date_input,
+            ],
             'date_card'
         )
+
 
     def _create_data_card(self):
         """Create data selection and property mapping card."""
@@ -211,6 +224,7 @@ class SonificationUI:
             'data_card'
         )
 
+
     def _create_settings_card(self):
         """Create sonification settings card with duration and generate button."""
         self.length_selector = IntText(
@@ -239,16 +253,21 @@ class SonificationUI:
             'settings_card'
         )
 
+
     def _setup_callbacks(self):
         """Connect widget observers to their callback methods."""
-        self.month_slider.observe(self._update_month_display, names='value')
+        self.start_date_input.observe(self._update_date_range_display, names='value')
+        self.end_date_input.observe(self._update_date_range_display, names='value')
         self.data_selector_2.observe(self._update_data_visibility, names='value')
         self.generate_button.on_click(self._on_generate_click)
 
-    def _update_month_display(self, change):
-        """Update the month display label when slider changes."""
-        month_num = change['new']
-        self.month_display.value = f'Selected: {self.month_names[month_num - 1]}'
+
+    def _update_date_range_display(self, change):
+        """Update the date range label when dates change."""
+        start = self.start_date_input.value
+        end = self.end_date_input.value
+        self.date_range_display.value = f'{start} to {end}'
+
 
     def _update_data_visibility(self, change):
         """Show/hide Data 2 property selector based on data selection."""
@@ -256,44 +275,53 @@ class SonificationUI:
         self.prop2_label.layout.display = 'block' if is_data2_selected else 'none'
         self.property_selector_2.layout.display = 'block' if is_data2_selected else 'none'
 
+
     def _on_generate_click(self, button):
-        """Handle Generate button click event."""
+        """Handle Generate button click event - fetch and sonify full date range."""
         with self.output_area:
             clear_output(wait=True)
             
-            # Get selected month
-            month_num = self.month_slider.value
-            
-            # Check if month has data
-            if month_num not in self.monthly_data:
-                print(f"Error: No data for month {month_num}")
-                return
-            
-            data_1 = self.data_selector_1.value
-            data_2 = self.data_selector_2.value
-            prop_1 = self.property_selector_1.value
-            prop_2 = self.property_selector_2.value
-            length = int(self.length_selector.value)
-            
-            # Get data for the selected month
-            month_df = self.monthly_data[month_num]
-            
-            # Create temporary DataManager for this month
-            temp_dm = DataManager(month_df)
-            temp_sonifier = Sonifier(temp_dm)
-            
-            # Get date range from month data
-            min_date, max_date = temp_dm.get_date_range()
-            
-            # Generate sonification
-            soni, mode = temp_sonifier.generate(
-                min_date, max_date, data_1, prop_1, data_2, prop_2, length
-            )
-            
-            # Render and display
-            soni.render()
-            soni.notebook_display(show_waveform=0)
-
+            try:
+                # Parse date range from text input
+                try:
+                    start_date_obj = pd.Timestamp(self.start_date_input.value).date()
+                    end_date_obj = pd.Timestamp(self.end_date_input.value).date()
+                except Exception as e:
+                    print(f"✗ Error parsing dates: {str(e)}")
+                    print(f"  Please use format: YYYY-MM-DD (e.g., 2020-04-01)")
+                    return
+                
+                # Fetch data from SOAR
+                full_data = fetch_soar_data(
+                    start_date_obj.year, start_date_obj.month, start_date_obj.day,
+                    end_date_obj.year, end_date_obj.month, end_date_obj.day,
+                    self.analysis_helpers
+                )
+                
+                # Create DataManager
+                data_manager = DataManager(full_data)
+                
+                # Get UI selections
+                data_1 = self.data_selector_1.value
+                data_2 = self.data_selector_2.value
+                prop_1 = self.property_selector_1.value
+                prop_2 = self.property_selector_2.value
+                length = int(self.length_selector.value)
+                
+                # Create Sonifier
+                sonifier = Sonifier(data_manager)
+                
+                # Generate sonification for full date range
+                soni, mode = sonifier.generate(
+                    start_date_obj, end_date_obj, data_1, prop_1, data_2, prop_2, length
+                )
+                
+                # Render and display
+                soni.render()
+                soni.notebook_display(show_waveform=0)
+                
+            except Exception as e:
+                print(f"✗ Error: {str(e)}")
 
 
     def display(self):
@@ -351,4 +379,3 @@ def find_widget_by_tag(container, tag):
                 return found_widget
     
     return None
-

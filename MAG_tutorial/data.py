@@ -7,6 +7,10 @@ Provides utilities for loading and filtering magnetic field data by date range.
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from sunpy.net import Fido, attrs as a
+import cdflib
+from sunpy.timeseries import TimeSeries as ts
+import sunpy_soar
 
 # Data availability constants
 MIN_DATA_YEAR = 2020
@@ -61,9 +65,9 @@ class DataManager:
         
         Parameters:
         -----------
-        start_date : str or pandas.Timestamp
+        start_date : str, datetime.date, or pandas.Timestamp
             Start date (inclusive)
-        end_date : str or pandas.Timestamp
+        end_date : str, datetime.date, or pandas.Timestamp
             End date (inclusive)
             
         Returns:
@@ -71,11 +75,18 @@ class DataManager:
         pandas.DataFrame
             Subset of data within the date range
         """
-        # Convert to timestamps if strings
+        # Convert to timestamps if strings or date objects
         if isinstance(start_date, str):
             start_date = pd.Timestamp(start_date)
+        elif hasattr(start_date, 'year') and not isinstance(start_date, pd.Timestamp):
+            # Handle Python date objects
+            start_date = pd.Timestamp(start_date.year, start_date.month, start_date.day)
+        
         if isinstance(end_date, str):
             end_date = pd.Timestamp(end_date)
+        elif hasattr(end_date, 'year') and not isinstance(end_date, pd.Timestamp):
+            # Handle Python date objects
+            end_date = pd.Timestamp(end_date.year, end_date.month, end_date.day)
         
         # Ensure valid range
         if start_date > end_date:
@@ -170,7 +181,6 @@ def fetch_soar_data(start_year, start_month, start_day, end_year, end_month, end
     ValueError
         If dates are before April 2020 (when data became available)
     """
-    from sunpy.net import Fido, attrs as a
     
     # Format dates as strings (YYYY-MM-DD)
     start_str = f"{start_year:04d}-{start_month:02d}-{start_day:02d}"
@@ -184,8 +194,6 @@ def fetch_soar_data(start_year, start_month, start_day, end_year, end_month, end
             f"Requested start date {start_str} is too early."
         )
     
-    print(f"Fetching SOAR data from {start_str} to {end_str}...")
-    
     # Create search attributes
     instrument = a.Instrument('MAG')
     time = a.Time(start_str, end_str)
@@ -193,25 +201,29 @@ def fetch_soar_data(start_year, start_month, start_day, end_year, end_month, end
     product = a.soar.Product('MAG-RTN-NORMAL-1-MINUTE')
     
     # Do search
-    print("Searching for available data...")
     result = Fido.search(time & level & product)
-    print(f"Found {len(result)} files. Downloading...")
     
     # Download files
     files = Fido.fetch(result)
     if isinstance(files, str):
         files = [files]
     
-    print(f"Downloaded {len(files)} files. Processing...")
-    
     # Process and combine data
-    data = pd.DataFrame()
+    data = None
     for i, file in enumerate(files):
-        print(f"  Processing file {i+1}/{len(files)}...", end='\r')
         temp_df = analysis_helpers.cdf2df(file)
-        data = pd.concat([data, temp_df])
+        if data is None:
+            data = temp_df.copy()
+        else:
+            data = pd.concat([data, temp_df])
+    
+    if data is None:
+        raise ValueError(f"No data files were successfully processed")
+    
+    # Ensure DatetimeIndex is proper
+    if not isinstance(data.index, pd.DatetimeIndex):
+        raise ValueError(f"Processed data does not have DatetimeIndex")
     
     data.sort_index(inplace=True)
-    print(f"\nCombined {len(data)} data points successfully!")
     
     return data

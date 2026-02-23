@@ -5,14 +5,24 @@ Handles the creation of sonifications from magnetic field data,
 including plotting and STRAUSS synthesis.
 """
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
+# strauss imports
+import strauss
 from strauss.sonification import Sonification
-from strauss.sources import Objects
 from strauss.score import Score
 from strauss.generator import Synthesizer
+from strauss.sources import Objects
 
+# set figures to be a decent size by default
+import matplotlib.pyplot as plt
+import matplotlib
+font = {'family' : 'sans-serif',
+        'weight' : 'normal',
+        'size'   : 18}
+matplotlib.rc('font', **font)
+matplotlib.rc('figure', **{'figsize':[14.0, 7.0]})
+
+import numpy as np
+import pandas as pd
 
 # Plotting constants
 PLOT_FIGSIZE = (8, 4)
@@ -44,9 +54,9 @@ class Sonifier:
         
         Parameters:
         -----------
-        start_date : str or pandas.Timestamp
+        start_date : str, datetime.date, or pandas.Timestamp
             Start date (inclusive) for data range
-        end_date : str or pandas.Timestamp
+        end_date : str, datetime.date, or pandas.Timestamp
             End date (inclusive) for data range
         data_1 : str
             Primary data variable (|B|, BR, BT, BN)
@@ -64,11 +74,16 @@ class Sonifier:
         tuple
             (Sonification object, mode string)
         """
+        # Convert date objects to pandas Timestamps (handle Python date objects)
+        if hasattr(start_date, 'year') and not isinstance(start_date, pd.Timestamp):
+            start_date = pd.Timestamp(start_date.year, start_date.month, start_date.day)
+        if hasattr(end_date, 'year') and not isinstance(end_date, pd.Timestamp):
+            end_date = pd.Timestamp(end_date.year, end_date.month, end_date.day)
+        
         # Extract data for the date range
         data_range = self.data_manager.extract_by_dates(start_date, end_date)
         
         date_str = f"{start_date} to {end_date}" if start_date != end_date else f"{start_date}"
-        print(f"Generating sonification for {date_str}...")
         print(f"  Data 1: {data_1} → {prop_1}")
 
         # Extract and clean Data 1
