@@ -1,9 +1,3 @@
-"""
-Data handling module for MAG sonification.
-
-Provides utilities for loading and filtering magnetic field data by date range.
-"""
-
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -195,13 +189,12 @@ def fetch_soar_data(start_year, start_month, start_day, end_year, end_month, end
         )
     
     # Create search attributes
-    instrument = a.Instrument('MAG')
-    time = a.Time(start_str, end_str)
-    level = a.Level(2)
-    product = a.soar.Product('MAG-RTN-NORMAL-1-MINUTE')
-    
-    # Do search
-    result = Fido.search(time & level & product)
+    result = Fido.search(
+        a.Time(start_str, end_str),
+        a.Instrument.mag,
+        a.soar.Product('mag-rtn-normal-1-minute'),
+        a.Level(2)
+    )
     
     # Download files
     files = Fido.fetch(result)
@@ -210,7 +203,7 @@ def fetch_soar_data(start_year, start_month, start_day, end_year, end_month, end
     
     # Process and combine data
     data = None
-    for i, file in enumerate(files):
+    for file in files:
         temp_df = analysis_helpers.cdf2df(file)
         if data is None:
             data = temp_df.copy()
